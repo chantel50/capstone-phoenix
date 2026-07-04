@@ -1,0 +1,22 @@
+---
+- name: Download k3s installer
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  become: yes
+
+- name: Install k3s agent
+  shell: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_EXEC: "agent"
+    K3S_URL: "https://{{ hostvars[groups['master'][0]]['ansible_host'] | default(groups['master'][0]) }}:6443"
+    K3S_TOKEN: "{{ hostvars[groups['master'][0]]['k3s_token'] }}"
+  become: yes
+
+- name: Wait for k3s agent to start
+  service:
+    name: k3s-agent
+    state: started
+    enabled: yes
+  become: yes
