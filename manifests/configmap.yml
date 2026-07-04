@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskapp-config
+  namespace: taskapp
+data:
+  ENVIRONMENT: "production"
+  BACKEND_URL: "http://backend-service:5000"
+  DOMAIN: "phoenix-chantel.duckdns.org"
