@@ -20,6 +20,8 @@ spec:
       labels:
         app: backend
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull-secret
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
