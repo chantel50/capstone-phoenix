@@ -31,7 +31,7 @@ spec:
             app: backend
       containers:
       - name: backend
-        image: ghcr.io/chantel50/taskapp-backend:1.0.0
+        image: ghcr.io/ts-a-devops/taskapp-backend:c2b906d
         ports:
         - containerPort: 5000
         envFrom:
