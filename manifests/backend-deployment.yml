@@ -36,6 +36,7 @@ spec:
         args: ["--workers", "3", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "run:app"]
         securityContext:
           runAsNonRoot: true
+          runAsUser: 10001
           allowPrivilegeEscalation: false
           capabilities:
             drop:
