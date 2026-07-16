@@ -32,6 +32,8 @@ spec:
       containers:
       - name: backend
         image: ghcr.io/ts-a-devops/taskapp-backend:5d6b8fc
+        command: ["gunicorn"]
+        args: ["--workers", "3", "--bind", "0.0.0.0:5000", "--access-logfile", "-", "run:app"]
         ports:
         - containerPort: 5000
         envFrom:

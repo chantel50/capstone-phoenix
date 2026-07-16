@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-migrate
+  namespace: taskapp
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: ghcr.io/ts-a-devops/taskapp-backend:5d6b8fc
+        command: ["alembic", "upgrade", "head"]
+        envFrom:
+        - configMapRef:
+            name: taskapp-config
+        - secretRef:
+            name: taskapp-secret
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
