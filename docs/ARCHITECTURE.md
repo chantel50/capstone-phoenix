@@ -1,47 +1,55 @@
-# Architecture (fill this in)
+# Architecture
 
 ## 1. Topology diagram
-> Draw it (ASCII, Excalidraw, draw.io — anything). Show: your nodes, where each TaskApp
-> tier runs, the ingress controller, and the request path.
 
-```
-[ replace with your diagram ]
+    Internet --DNS(duckdns)--> phoenix-chantel.duckdns.org
+          |
+          v
+    ingress-nginx controller (node: ip-10-0-1-55, control-plane)
+          |  TLS terminated here - cert-manager + Let's Encrypt (ClusterIssuer: letsencrypt-prod)
+          |
+          |-- /    --> frontend Service --> frontend Pods (nodes: ip-10-0-1-55, ip-10-0-1-235)
+          |
+          `-- /api --> backend Service  --> backend Pods (spread via topologySpreadConstraints
+                            |                across all 3 nodes, 2-5 replicas via HPA)
+                            v
+                  postgres Service (headless) --> postgres-0 StatefulSet
+                                                    (PVC on node ip-10-0-1-85)
 
-  Internet ──DNS──▶ taskapp.<you>.dev / api.<you>.dev
-        │
-        ▼
-  ingress controller (node: ____)  ──TLS terminated by cert-manager──┐
-        │                                                            │
-        ▼                                                            ▼
-  frontend Service ──▶ frontend Pods (nodes: __, __)        backend Service ──▶ backend Pods (nodes: __, __)
-                              │  /api proxy                              │
-                              └────────────────────────────────────────▶│
-                                                                         ▼
-                                                          postgres Service ──▶ postgres-0 (PVC on node __)
-```
+## 2. Cluster
 
-## 2. Node & network
-- Nodes (role, size, AZ/region): …
-- CIDR / subnet choices and why: …
-- Firewall: what's open to the world, what's internal, and why `6443` is closed: …
+- 3-node k3s cluster on AWS EC2: 1 control-plane + 2 workers, all `t3.small`
+- Provisioned with Terraform (VPC, subnet, security groups, EC2 instances, S3+DynamoDB
+  remote state), configured with Ansible (k3s-server / k3s-agent roles)
+- CNI: Flannel (k3s default). **Note:** this k3s install does enforce NetworkPolicy
+  (not all Flannel setups do - this cost real debugging time to confirm, see RUNBOOK
+  incident log)
 
-## 3. Request flow (one paragraph)
-> DNS → ingress → TLS → frontend → /api → backend → Postgres. Be specific about names/ports.
+## 3. Application tiers
 
-## 4. The single-server assumptions you fixed  ← graders look here
-> For each, name the assumption that was safe on one box but breaks on a cluster, and the
-> K8s mechanism you used. Minimum: migrations, persistent storage, traffic routing,
-> self-healing, zero-downtime deploys, secrets.
+- **frontend**: React (Vite) served by nginx, 2 replicas, HPA-capable (2-4)
+- **backend**: Flask + gunicorn (3 workers per pod), 2 replicas baseline, HPA to 5
+  under load, connects to Postgres via `DATABASE_HOST=postgres`
+- **postgres**: single-instance StatefulSet, persistent volume (2Gi), headless Service
+  for stable DNS (`postgres.taskapp.svc.cluster.local`)
+- **migrations**: run as a dedicated Kubernetes Job (`backend-migrate`), wired as an
+  Argo CD `PreSync` hook - runs once before each sync, not baked into the app
+  container's entrypoint (avoids replica race conditions at 2+ backend replicas)
 
-| Single-server assumption | Why it breaks at scale | How you fixed it |
-|---|---|---|
-| migrate-on-boot in the entrypoint | 2+ replicas race on `alembic upgrade head` | … |
-| named volume on the host | Pods reschedule across nodes | … |
-| `ports:` published on the host | many Pods, many nodes, one front door needed | … |
-| … | … | … |
+## 4. GitOps
 
-## 5. Choices & trade-offs
-- Raw YAML vs Helm vs kustomize — why: …
-- ingress-nginx vs k3s Traefik — why: …
-- CNI / NetworkPolicy enforcement — what and why: …
-- Secrets approach (out-of-band vs Sealed/External Secrets) — why: …
+- Argo CD watches `chantel50/capstone-phoenix` main branch, `manifests/` path
+- `automated: {prune: true, selfHeal: true}` - cluster state is enforced to match git
+- Secrets are **not** stored in git (see RUNBOOK) - managed out-of-band via `kubectl`
+
+## 5. Security posture
+
+- All 3 backend/frontend/postgres pods run with `securityContext`: dropped Linux
+  capabilities (`ALL`, with narrow explicit re-adds where required - e.g. frontend
+  nginx needs `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID` to bind port 80 and
+  manage its cache dirs as root; backend runs fully non-root as UID 10001)
+- NetworkPolicy restricts ingress traffic per tier: postgres only accepts traffic from
+  `app=backend` pods; backend only accepts traffic from `app=frontend` pods and the
+  `ingress-nginx` namespace (the ingress controller talks to backend directly for
+  `/api` routes, bypassing frontend)
+- TLS via cert-manager + Let's Encrypt, auto-renewed
